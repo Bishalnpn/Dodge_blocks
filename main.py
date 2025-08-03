@@ -21,11 +21,50 @@ RED = (255, 0, 0)
 BLUE = (0, 0, 255)
 GREEN = (0, 255, 0)
 GRAY = (128, 128, 128)
+YELLOW = (255, 255, 0)
 
 # Display setup
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Dodge Blocks!")
 clock = pygame.time.Clock()
+
+class Menu:
+    def __init__(self):
+        self.font_large = pygame.font.Font(None, 72)
+        self.font_medium = pygame.font.Font(None, 48)
+        self.font_small = pygame.font.Font(None, 36)
+        self.selected_option = 0
+        self.options = ["Play", "Exit"]
+        
+    def draw(self):
+        screen.fill(BLACK)
+        
+        # Draw title
+        title_text = self.font_large.render("DODGE BLOCKS!", True, YELLOW)
+        title_rect = title_text.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//4))
+        screen.blit(title_text, title_rect)
+        
+        # Draw options
+        for i, option in enumerate(self.options):
+            color = GREEN if i == self.selected_option else WHITE
+            text = self.font_medium.render(option, True, color)
+            text_rect = text.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2 + i * 60))
+            screen.blit(text, text_rect)
+            
+        # Draw instructions
+        instruction_text = self.font_small.render("Use UP/DOWN arrows to navigate, ENTER to select", True, GRAY)
+        instruction_rect = instruction_text.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT - 50))
+        screen.blit(instruction_text, instruction_rect)
+        
+    def handle_input(self, event):
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_UP:
+                self.selected_option = (self.selected_option - 1) % len(self.options)
+            elif event.key == pygame.K_DOWN:
+                self.selected_option = (self.selected_option + 1) % len(self.options)
+            elif event.key == pygame.K_RETURN:
+                return self.options[self.selected_option]
+        return None
 
 class Player:
     def __init__(self):
@@ -132,7 +171,9 @@ class Game:
         self.spawn_counter = 0
 
 def main():
+    menu = Menu()
     game = Game()
+    current_state = "menu"  # "menu", "game", "game_over"
     
     while True:
         for event in pygame.event.get():
@@ -140,25 +181,38 @@ def main():
                 pygame.quit()
                 sys.exit()
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_r and game.game_over:
-                    game.reset()
-                elif event.key == pygame.K_q and game.game_over:
-                    pygame.quit()
-                    sys.exit()
+                if current_state == "menu":
+                    selection = menu.handle_input(event)
+                    if selection == "Play":
+                        current_state = "game"
+                        game.reset()
+                    elif selection == "Exit":
+                        pygame.quit()
+                        sys.exit()
+                elif current_state == "game":
+                    if event.key == pygame.K_r and game.game_over:
+                        current_state = "menu"
+                    elif event.key == pygame.K_q and game.game_over:
+                        current_state = "menu"
         
-        if not game.game_over:
-            # Handle player movement
-            keys = pygame.key.get_pressed()
-            if keys[pygame.K_LEFT] or keys[pygame.K_a]:
-                game.player.move("left")
-            if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
-                game.player.move("right")
+        if current_state == "menu":
+            menu.draw()
+        elif current_state == "game":
+            if not game.game_over:
+                # Handle player movement
+                keys = pygame.key.get_pressed()
+                if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+                    game.player.move("left")
+                if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+                    game.player.move("right")
+                    
+                game.update()
                 
-            game.update()
+            game.draw()
             
-        game.draw()
         pygame.display.flip()
         clock.tick(60)
 
 if __name__ == "__main__":
     main()
+
