@@ -11,8 +11,8 @@ SCREEN_HEIGHT = 600
 PLAYER_SIZE = 30
 OBSTACLE_SIZE = 25
 PLAYER_SPEED = 5
-OBSTACLE_SPEED = 3
-OBSTACLE_SPAWN_RATE = 60  # frames between obstacle spawns
+OBSTACLE_SPEED = 10
+OBSTACLE_SPAWN_RATE = 100  # frames between obstacle spawns
 
 # Colors
 WHITE = (255, 255, 255)
@@ -193,7 +193,8 @@ def main():
                     if event.key == pygame.K_r and game.game_over:
                         current_state = "menu"
                     elif event.key == pygame.K_q and game.game_over:
-                        current_state = "menu"
+                        pygame.quit()
+                        sys.exit()
         
         if current_state == "menu":
             menu.draw()
