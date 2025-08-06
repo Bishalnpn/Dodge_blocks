@@ -1,6 +1,8 @@
 import pygame
 import random
 import sys
+import json
+import os
 
 # Initialize Pygame
 pygame.init()
@@ -11,9 +13,26 @@ SCREEN_HEIGHT = 600
 PLAYER_SIZE = 30
 OBSTACLE_SIZE = 25
 PLAYER_SPEED = 5
-OBSTACLE_SPEED = 10
-OBSTACLE_SPAWN_RATE = 100  # frames between obstacle spawns
 ICON_SIZE = 60
+
+# Difficulty settings
+DIFFICULTY_SETTINGS = {
+    "Beginner": {
+        "obstacle_speed": 8,
+        "obstacle_spawn_rate": 120,
+        "bonus_spawn_rate": 360  # 3x obstacle spawn rate
+    },
+    "Intermediate": {
+        "obstacle_speed": 12,
+        "obstacle_spawn_rate": 80,
+        "bonus_spawn_rate": 240
+    },
+    "Pro": {
+        "obstacle_speed": 16,
+        "obstacle_spawn_rate": 60,
+        "bonus_spawn_rate": 180
+    }
+}
 
 # Colors
 WHITE = (255, 255, 255)
@@ -31,6 +50,28 @@ screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 pygame.display.set_caption("Dodge Blocks!")
 clock = pygame.time.Clock()
 
+# High score file
+HIGH_SCORE_FILE = "high_score.json"
+
+def load_high_score():
+    """Load high score from file"""
+    try:
+        if os.path.exists(HIGH_SCORE_FILE):
+            with open(HIGH_SCORE_FILE, 'r') as f:
+                data = json.load(f)x
+                return data.get('high_score', 0)
+    except:
+        pass
+    return 0
+
+def save_high_score(score):
+    """Save high score to file"""
+    try:
+        with open(HIGH_SCORE_FILE, 'w') as f:
+            json.dump({'high_score': score}, f)
+    except:
+        pass
+
 class Menu:
     def __init__(self):
         self.font_large = pygame.font.Font(None, 72)
@@ -38,6 +79,7 @@ class Menu:
         self.font_small = pygame.font.Font(None, 36)
         self.selected_option = 0
         self.options = ["Play", "Exit"]
+        self.high_score = load_high_score()
         
     def draw(self):
         screen.fill(BLACK)
@@ -48,6 +90,49 @@ class Menu:
         screen.blit(title_text, title_rect)
         
         # Draw options
+        for i, option in enumerate(self.options):
+            color = GREEN if i == self.selected_option else WHITE
+            text = self.font_medium.render(option, True, color)
+            text_rect = text.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2 + i * 60))
+            screen.blit(text, text_rect)
+            
+        # Draw high score
+        high_score_text = self.font_small.render(f"High Score: {self.high_score}", True, YELLOW)
+        high_score_rect = high_score_text.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT - 80))
+        screen.blit(high_score_text, high_score_rect)
+        
+        # Draw instructions
+        instruction_text = self.font_small.render("Use UP/DOWN arrows to navigate, ENTER to select", True, GRAY)
+        instruction_rect = instruction_text.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT - 50))
+        screen.blit(instruction_text, instruction_rect)
+        
+    def handle_input(self, event):
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_UP:
+                self.selected_option = (self.selected_option - 1) % len(self.options)
+            elif event.key == pygame.K_DOWN:
+                self.selected_option = (self.selected_option + 1) % len(self.options)
+            elif event.key == pygame.K_RETURN:
+                return self.options[self.selected_option]
+        return None
+        
+class DifficultyMenu:
+    def __init__(self):
+        self.font_large = pygame.font.Font(None, 72)
+        self.font_medium = pygame.font.Font(None, 48)
+        self.font_small = pygame.font.Font(None, 36)
+        self.selected_option = 0
+        self.options = ["Beginner", "Intermediate", "Pro"]
+        
+    def draw(self):
+        screen.fill(BLACK)
+        
+        # Draw title
+        title_text = self.font_large.render("SELECT DIFFICULTY", True, YELLOW)
+        title_rect = title_text.get_rect(center=(SCREEN_WIDTH//2, SCREEN_HEIGHT//4))
+        screen.blit(title_text, title_rect)
+        
+        # Draw difficulty options
         for i, option in enumerate(self.options):
             color = GREEN if i == self.selected_option else WHITE
             text = self.font_medium.render(option, True, color)
@@ -186,11 +271,11 @@ class Player:
         pygame.draw.rect(screen, (100, 100, 255), (self.x + 2, self.y + 2, self.size - 4, self.size - 4))
 
 class Obstacle:
-    def __init__(self, x):
+    def __init__(self, x, speed):
         self.x = x
         self.y = -OBSTACLE_SIZE
         self.size = OBSTACLE_SIZE
-        self.speed = OBSTACLE_SPEED
+        self.speed = speed
         
     def move(self):
         self.y += self.speed
@@ -206,22 +291,67 @@ class Obstacle:
         return (self.x < player.x + player.size and
                 self.x + self.size > player.x and
                 self.y < player.y + player.size and
-                self.y + self.size > player.y)  
+                self.y + self.size > player.y)
+
+class BonusCircle:
+    def __init__(self, x, speed):
+        self.x = x
+        self.y = -30
+        self.radius = 15
+        self.speed = speed
+        self.collected = False
+        
+    def move(self):
+        self.y += self.speed
+        
+    def draw(self):
+        if not self.collected:
+            # Draw outer circle
+            pygame.draw.circle(screen, YELLOW, (self.x + self.radius, self.y + self.radius), self.radius)
+            # Draw inner circle for 3D effect
+            pygame.draw.circle(screen, (200, 200, 0), (self.x + self.radius, self.y + self.radius), self.radius - 3)
+            # Draw sparkle effect
+            pygame.draw.circle(screen, WHITE, (self.x + self.radius, self.y + self.radius), 3)
+        
+    def is_off_screen(self):
+        return self.y > SCREEN_HEIGHT
+        
+    def collides_with(self, player):
+        if self.collected:
+            return False
+        # Calculate distance between circle center and player center
+        circle_center_x = self.x + self.radius
+        circle_center_y = self.y + self.radius
+        player_center_x = player.x + player.size // 2
+        player_center_y = player.y + player.size // 2
+        
+        distance = ((circle_center_x - player_center_x) ** 2 + (circle_center_y - player_center_y) ** 2) ** 0.5
+        return distance < (self.radius + player.size // 2)  
 
 class Game:
-    def __init__(self):
+    def __init__(self, difficulty="Intermediate"):
         self.player = Player()
         self.obstacles = []
+        self.bonus_circles = []
         self.score = 0
         self.game_over = False
         self.spawn_counter = 0
+        self.bonus_spawn_counter = 0
         self.font = pygame.font.Font(None, 36)
         self.font_small = pygame.font.Font(None, 24)
         self.game_over_selection = 0  # 0 for restart, 1 for exit
+        self.difficulty = difficulty
+        self.settings = DIFFICULTY_SETTINGS[difficulty]
+        self.high_score = load_high_score()
+        self.new_high_score = False
         
     def spawn_obstacle(self):
         x = random.randint(0, SCREEN_WIDTH - OBSTACLE_SIZE)
-        self.obstacles.append(Obstacle(x))
+        self.obstacles.append(Obstacle(x, self.settings["obstacle_speed"]))
+        
+    def spawn_bonus_circle(self):
+        x = random.randint(0, SCREEN_WIDTH - 30)  # 30 is diameter of circle
+        self.bonus_circles.append(BonusCircle(x, self.settings["obstacle_speed"]))
         
     def update(self):
         if self.game_over:
@@ -229,9 +359,15 @@ class Game:
             
         # Spawn obstacles
         self.spawn_counter += 1
-        if self.spawn_counter >= OBSTACLE_SPAWN_RATE:
+        if self.spawn_counter >= self.settings["obstacle_spawn_rate"]:
             self.spawn_obstacle()
             self.spawn_counter = 0
+            
+        # Spawn bonus circles (less frequently than obstacles)
+        self.bonus_spawn_counter += 1
+        if self.bonus_spawn_counter >= self.settings["bonus_spawn_rate"]:
+            self.spawn_bonus_circle()
+            self.bonus_spawn_counter = 0
             
         # Update obstacles
         for obstacle in self.obstacles[:]:
@@ -241,6 +377,21 @@ class Game:
                 self.score += 1
             elif obstacle.collides_with(self.player):
                 self.game_over = True
+                # Check for new high score
+                if self.score > self.high_score:
+                    self.high_score = self.score
+                    self.new_high_score = True
+                    save_high_score(self.score)
+                
+        # Update bonus circles
+        for circle in self.bonus_circles[:]:
+            circle.move()
+            if circle.is_off_screen():
+                self.bonus_circles.remove(circle)
+            elif circle.collides_with(self.player):
+                circle.collected = True
+                self.score += 5  # Bonus points for collecting circles
+                self.bonus_circles.remove(circle)
                 
     def draw(self):
         screen.fill(BLACK)
@@ -252,9 +403,17 @@ class Game:
         for obstacle in self.obstacles:
             obstacle.draw()
             
-        # Draw score
+        # Draw bonus circles
+        for circle in self.bonus_circles:
+            circle.draw()
+            
+        # Draw score, difficulty, and high score
         score_text = self.font.render(f"Score: {self.score}", True, WHITE)
+        difficulty_text = self.font_small.render(f"Difficulty: {self.difficulty}", True, GRAY)
+        high_score_text = self.font_small.render(f"High Score: {self.high_score}", True, YELLOW)
         screen.blit(score_text, (10, 10))
+        screen.blit(difficulty_text, (10, 40))
+        screen.blit(high_score_text, (10, 70))
         
         # Draw pause icon in top right
         pause_icon_size = 30
@@ -278,8 +437,13 @@ class Game:
             game_over_text = self.font.render("GAME OVER!", True, RED)
             final_score_text = self.font.render(f"Final Score: {self.score}", True, GREEN)
             
-            screen.blit(game_over_text, (SCREEN_WIDTH//2 - game_over_text.get_width()//2, SCREEN_HEIGHT//2 - 80))
-            screen.blit(final_score_text, (SCREEN_WIDTH//2 - final_score_text.get_width()//2, SCREEN_HEIGHT//2 - 40))
+            screen.blit(game_over_text, (SCREEN_WIDTH//2 - game_over_text.get_width()//2, SCREEN_HEIGHT//2 - 100))
+            screen.blit(final_score_text, (SCREEN_WIDTH//2 - final_score_text.get_width()//2, SCREEN_HEIGHT//2 - 60))
+            
+            # Show new high score message if achieved
+            if self.new_high_score:
+                new_high_score_text = self.font.render("NEW HIGH SCORE!", True, YELLOW)
+                screen.blit(new_high_score_text, (SCREEN_WIDTH//2 - new_high_score_text.get_width()//2, SCREEN_HEIGHT//2 - 20))
             
             # Draw restart and exit icons
             icon_x = SCREEN_WIDTH//2 - ICON_SIZE//2
@@ -318,10 +482,14 @@ class Game:
     def reset(self):
         self.player = Player()
         self.obstacles = []
+        self.bonus_circles = []
         self.score = 0
         self.game_over = False
         self.spawn_counter = 0
+        self.bonus_spawn_counter = 0
         self.game_over_selection = 0
+        self.new_high_score = False
+        # Keep the same difficulty settings
         
     def handle_game_over_input(self, event):
         if event.type == pygame.KEYDOWN:
@@ -338,9 +506,10 @@ class Game:
 
 def main():
     menu = Menu()
+    difficulty_menu = DifficultyMenu()
     pause_menu = PauseMenu()
-    game = Game()
-    current_state = "menu"  # "menu", "game", "pause", "game_over"
+    game = None
+    current_state = "menu"  # "menu", "difficulty", "game", "pause", "game_over"
     
     while True:
         for event in pygame.event.get():
@@ -351,18 +520,22 @@ def main():
                 if current_state == "menu":
                     selection = menu.handle_input(event)
                     if selection == "Play":
-                        current_state = "game"
-                        game.reset()
+                        current_state = "difficulty"
                     elif selection == "Exit":
                         pygame.quit()
                         sys.exit()
+                elif current_state == "difficulty":
+                    difficulty_selection = difficulty_menu.handle_input(event)
+                    if difficulty_selection:
+                        game = Game(difficulty_selection)
+                        current_state = "game"
                 elif current_state == "game":
                     if event.key == pygame.K_p and not game.game_over:
                         current_state = "pause"
                     elif game.game_over:
                         game_over_action = game.handle_game_over_input(event)
                         if game_over_action == "restart":
-                            current_state = "menu"
+                            current_state = "difficulty"
                         elif game_over_action == "exit":
                             pygame.quit()
                             sys.exit()
@@ -379,6 +552,8 @@ def main():
         
         if current_state == "menu":
             menu.draw()
+        elif current_state == "difficulty":
+            difficulty_menu.draw()
         elif current_state == "game":
             if not game.game_over:
                 # Handle player movement
